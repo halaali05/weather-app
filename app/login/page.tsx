@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { collection, query, where, getDocs, doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
+
+
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -12,7 +15,19 @@ export default function LoginPage() {
   const router = useRouter();
 
   const handleLogin = async () => {
+    if (!email || !password) {
+    setError("Please enter email and password");
+    return;
+  }
     try {
+     
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        setError("No account found with this email");
+        return;
+      }
+
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       if (!userCredential.user.emailVerified) {
         await signOut(auth);
@@ -20,20 +35,39 @@ export default function LoginPage() {
         return;
       }
       router.push("/");
-    } catch (_) {
-      setError("Invalid email or password");
+    } catch (err) {
+      const error = err as { code: string };
+      if (error.code === "auth/wrong-password" || error.code === "auth/invalid-credential") {
+        setError("Wrong password");
+      } else if (error.code === "auth/invalid-email") {
+        setError("Invalid email address");
+      } else {
+        console.log(err);
+        setError("Something went wrong");
+      }
     }
   };
 
   const handleGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      router.push("/");
-    } catch (_) {
-      setError("Something went wrong");
+  try {
+    const provider = new GoogleAuthProvider();
+    const userCredential = await signInWithPopup(auth, provider);
+    
+  
+    const q = query(collection(db, "users"), where("email", "==", userCredential.user.email));
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        name: userCredential.user.displayName,
+        email: userCredential.user.email,
+        createdAt: new Date(),
+      });
     }
-  };
+    router.push("/");
+  } catch (_) {
+    setError("Something went wrong");
+  }
+};
 
   return (
     <div className="auth-container">

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { auth } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 
 export default function RegisterPage() {
@@ -16,10 +17,24 @@ export default function RegisterPage() {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
+      await setDoc(doc(db, "users", userCredential.user.uid), {
+        name,
+        email,
+        createdAt: new Date(),
+      });
       await sendEmailVerification(userCredential.user);
       router.push("/verify-email");
     } catch (err) {
-      setError((err as Error).message);
+      const error = err as { code: string };
+      if (error.code === "auth/email-already-in-use") {
+        setError("This email is already registered");
+      } else if (error.code === "auth/weak-password") {
+        setError("Password must be at least 6 characters");
+      } else if (error.code === "auth/invalid-email") {
+        setError("Invalid email address");
+      } else {
+        setError("Something went wrong");
+      }
     }
   };
 
